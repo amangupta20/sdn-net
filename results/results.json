@@ -1,0 +1,310 @@
+{
+  "started": "2026-11-01 17:56:35",
+  "topology": {
+    "switches": {
+      "s1": {
+        "dpid": 1,
+        "role": "Edge - clients + attacker"
+      },
+      "s2": {
+        "dpid": 2,
+        "role": "Core - transit + monitor"
+      },
+      "s3": {
+        "dpid": 3,
+        "role": "Farm - backend servers"
+      }
+    },
+    "links": [
+      {
+        "a": "s1",
+        "pa": 1,
+        "b": "s2",
+        "pb": 1,
+        "down": false
+      },
+      {
+        "a": "s2",
+        "pa": 2,
+        "b": "s3",
+        "pb": 1,
+        "down": false
+      },
+      {
+        "a": "s3",
+        "pa": 2,
+        "b": "s1",
+        "pb": 2,
+        "down": false
+      }
+    ],
+    "hosts": {
+      "h_client": {
+        "ip": "10.0.0.10",
+        "mac": "00:00:00:00:00:0a",
+        "sw": "s1",
+        "port": 10,
+        "kind": "LB client (curl/iperf)"
+      },
+      "h_attacker": {
+        "ip": "10.0.0.99",
+        "mac": "00:00:00:00:00:99",
+        "sw": "s1",
+        "port": 11,
+        "kind": "Attacker (flood/spoof)"
+      },
+      "srv1": {
+        "ip": "10.0.0.11",
+        "mac": "00:00:00:00:00:11",
+        "sw": "s3",
+        "port": 10,
+        "kind": "Backend replica 1"
+      },
+      "srv2": {
+        "ip": "10.0.0.12",
+        "mac": "00:00:00:00:00:12",
+        "sw": "s3",
+        "port": 11,
+        "kind": "Backend replica 2"
+      },
+      "srv3": {
+        "ip": "10.0.0.13",
+        "mac": "00:00:00:00:00:13",
+        "sw": "s3",
+        "port": 12,
+        "kind": "Backend replica 3"
+      },
+      "h_mon": {
+        "ip": "10.0.0.20",
+        "mac": "00:00:00:00:00:20",
+        "sw": "s2",
+        "port": 10,
+        "kind": "Monitor / IDS"
+      }
+    },
+    "vip": "10.0.0.100",
+    "vip_mac": "02:00:00:00:00:fe",
+    "backends": [
+      "srv1",
+      "srv2",
+      "srv3"
+    ],
+    "connected": [
+      "s1",
+      "s2",
+      "s3"
+    ]
+  },
+  "functional": {
+    "pairs": 30,
+    "reached": 30,
+    "mismatches": [],
+    "vip_body": "srv1",
+    "vip_ok": true,
+    "paths": {
+      "s1->srv1": {
+        "path": [
+          "s1",
+          "s3"
+        ],
+        "out_port": 2
+      },
+      "s2->srv1": {
+        "path": [
+          "s2",
+          "s3"
+        ],
+        "out_port": 2
+      },
+      "s3->srv1": {
+        "path": [
+          "s3"
+        ],
+        "out_port": null
+      },
+      "s1->srv2": {
+        "path": [
+          "s1",
+          "s3"
+        ],
+        "out_port": 2
+      },
+      "s2->srv2": {
+        "path": [
+          "s2",
+          "s3"
+        ],
+        "out_port": 2
+      },
+      "s3->srv2": {
+        "path": [
+          "s3"
+        ],
+        "out_port": null
+      },
+      "s1->srv3": {
+        "path": [
+          "s1",
+          "s3"
+        ],
+        "out_port": 2
+      },
+      "s2->srv3": {
+        "path": [
+          "s2",
+          "s3"
+        ],
+        "out_port": 2
+      },
+      "s3->srv3": {
+        "path": [
+          "s3"
+        ],
+        "out_port": null
+      }
+    }
+  },
+  "lb": {
+    "round_robin": {
+      "hits": {
+        "srv1": 10,
+        "srv2": 10,
+        "srv3": 10
+      },
+      "mean_ms": 6.36,
+      "p99_ms": 8.71,
+      "answered": 30,
+      "conns": {
+        "srv1": {
+          "alive": true,
+          "conns": 11
+        },
+        "srv2": {
+          "alive": true,
+          "conns": 10
+        },
+        "srv3": {
+          "alive": true,
+          "conns": 10
+        }
+      }
+    },
+    "least_conn": {
+      "hits": {
+        "srv2": 10,
+        "srv3": 10,
+        "srv1": 10
+      },
+      "mean_ms": 6.07,
+      "p99_ms": 6.95,
+      "answered": 30,
+      "conns": {
+        "srv1": {
+          "alive": true,
+          "conns": 21
+        },
+        "srv2": {
+          "alive": true,
+          "conns": 20
+        },
+        "srv3": {
+          "alive": true,
+          "conns": 20
+        }
+      }
+    },
+    "weighted": {
+      "hits": {
+        "srv2": 10,
+        "srv3": 10,
+        "srv1": 10
+      },
+      "mean_ms": 6.52,
+      "p99_ms": 8.01,
+      "answered": 30,
+      "conns": {
+        "srv1": {
+          "alive": true,
+          "conns": 31
+        },
+        "srv2": {
+          "alive": true,
+          "conns": 30
+        },
+        "srv3": {
+          "alive": true,
+          "conns": 30
+        }
+      }
+    }
+  },
+  "failover": {
+    "sdn": {
+      "trials": [
+        {
+          "outage_ms": 2.8,
+          "sent": 160,
+          "received": 160,
+          "gap_started_after_fail_ms": -2500.2
+        },
+        {
+          "outage_ms": 2.8,
+          "sent": 160,
+          "received": 160,
+          "gap_started_after_fail_ms": -2501.1
+        },
+        {
+          "outage_ms": 19.2,
+          "sent": 160,
+          "received": 160,
+          "gap_started_after_fail_ms": -2501.3
+        }
+      ],
+      "reprogram_ms": [
+        1.13,
+        1.04,
+        1.79,
+        0.86,
+        2.92,
+        1.47
+      ]
+    },
+    "rstp": {
+      "initial_convergence_s": 5.1,
+      "trials": [
+        {
+          "outage_ms": 2.3,
+          "sent": 160,
+          "received": 160,
+          "gap_started_after_fail_ms": -2502.2
+        },
+        {
+          "outage_ms": 2.1,
+          "sent": 160,
+          "received": 160,
+          "gap_started_after_fail_ms": -2502.1
+        },
+        {
+          "outage_ms": 2.1,
+          "sent": 160,
+          "received": 160,
+          "gap_started_after_fail_ms": -2501.8
+        }
+      ]
+    }
+  },
+  "security": {
+    "policing_off": {
+      "legit_ok": 0,
+      "legit_fail": 4,
+      "packetin_allowed": 0,
+      "packetin_dropped": 0
+    },
+    "policing_on": {
+      "legit_ok": 231,
+      "legit_fail": 0,
+      "packetin_allowed": 2272,
+      "packetin_dropped": 24975
+    }
+  }
+}

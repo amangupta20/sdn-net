@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team 21 — SDN L4 Load Balancer + Security</title>
+<style>
+  :root { --bg:#0f1419; --card:#1a222c; --line:#2b3644; --txt:#dbe4ee;
+          --dim:#8fa0b3; --ok:#3ecf6f; --bad:#ff5d5d; --acc:#4aa8ff; }
+  * { box-sizing:border-box; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  body { background:var(--bg); color:var(--txt); margin:0; padding:20px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--dim); font-size:13px; margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em;
+             color:var(--dim); margin:0 0 10px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%;
+         background:var(--ok); margin-right:6px; }
+  .dot.down { background:var(--bad); }
+  .backend { display:flex; align-items:center; justify-content:space-between;
+             padding:8px 0; border-bottom:1px solid var(--line); }
+  .backend:last-child { border-bottom:none; }
+  .pill { font-size:11px; padding:2px 8px; border-radius:20px; }
+  .pill.alive { background:rgba(62,207,111,.15); color:var(--ok); }
+  .pill.dead { background:rgba(255,93,93,.15); color:var(--bad); }
+  button { background:#243040; color:var(--txt); border:1px solid var(--line);
+           border-radius:6px; padding:6px 12px; cursor:pointer; font-size:13px; }
+  button:hover { border-color:var(--acc); }
+  button.on { background:rgba(74,168,255,.2); border-color:var(--acc); }
+  button.danger { border-color:var(--bad); color:var(--bad); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .big { font-size:22px; font-weight:700; }
+  .lbl { font-size:11px; color:var(--dim); }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th,td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-weight:600; }
+  #events { max-height:220px; overflow-y:auto; font-size:12px; }
+  #events div { padding:3px 0; border-bottom:1px dotted var(--line); color:var(--dim); }
+  #events div b { color:var(--txt); font-weight:600; }
+  code { background:#0b0f14; padding:1px 5px; border-radius:4px; font-size:12px; }
+  a { color:var(--acc); }
+</style>
+</head>
+<body>
+<h1><span class="dot" id="dot"></span>Team 21 — SDN L4 Load Balancer + Security</h1>
+<div class="sub">VIP <code>10.0.0.100</code> → srv1–3 &nbsp;·&nbsp; Ryu remote controller &nbsp;·&nbsp; <span id="status">connecting…</span></div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Backends (click to kill / revive)</h2>
+    <div id="backends"></div>
+  </div>
+  <div class="card">
+    <h2>LB algorithm</h2>
+    <div class="row" id="algos"></div>
+    <p class="lbl">weighted = min(conns×10 + RTT + load×20) — our multi-parameter score.</p>
+    <h2 style="margin-top:14px">Flood policing</h2>
+    <div class="row">
+      <button id="polBtn">…</button>
+      <span class="lbl" id="limiter"></span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Controller counters</h2>
+    <div class="row" style="gap:20px">
+      <div><div class="big" id="cPin">–</div><div class="lbl">packet_in</div></div>
+      <div><div class="big" id="cFlows">–</div><div class="lbl">LB flows</div></div>
+      <div><div class="big" id="cDup">–</div><div class="lbl">dup upcalls</div></div>
+      <div><div class="big" id="cDrop">–</div><div class="lbl">flood dropped</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid" style="margin-top:12px">
+  <div class="card">
+    <h2>Paths (primary out-port per switch → backend)</h2>
+    <table><thead><tr><th>route</th><th>path</th><th>out</th></tr></thead>
+    <tbody id="paths"></tbody></table>
+  </div>
+  <div class="card">
+    <h2>Events (security + failover)</h2>
+    <div id="events"></div>
+  </div>
+</div>
+
+<p class="sub">Live from <code>/lb/*</code> REST · full story in <code>results/summary.md</code> ·
+<a href="/lb/stats">raw stats JSON</a></p>
+
+<script>
+const J = r => r.json();
+async function api(path, body) {
+  const o = {headers: {"Content-Type": "application/json"}};
+  if (body !== undefined) { o.method = "PUT"; o.body = JSON.stringify(body); }
+  return J(await fetch("/lb" + path, o));
+}
+let ALGOS = ["round_robin", "least_conn", "weighted"];
+async function refresh() {
+  try {
+    const [topo, policy, health, stats, paths] =
+      await Promise.all([api("/topology"), api("/policy"), api("/health"),
+                         api("/stats"), api("/paths")]);
+    document.getElementById("dot").className = "dot" + (topo.connected.length === 3 ? "" : " down");
+    document.getElementById("status").textContent =
+      "switches: " + (topo.connected.join(", ") || "none") +
+      topo.links.map(l => " · " + l.a + "-" + l.b + (l.down ? " DOWN" : "")).join("");
+
+    const bc = document.getElementById("backends"); bc.innerHTML = "";
+    for (const b of topo.backends) {
+      const h = health[b];
+      const row = document.createElement("div"); row.className = "backend";
+      row.innerHTML = `<span><b>${b}</b> <span class="lbl">${topo.hosts[b].ip} · conns ${h.conns}</span></span>`;
+      const btn = document.createElement("button");
+      btn.innerHTML = `<span class="pill ${h.alive ? "alive" : "dead"}">${h.alive ? "alive" : "dead"}</span>`;
+      btn.title = "toggle " + b;
+      if (!h.alive) btn.classList.add("danger");
+      btn.onclick = () => api("/health", {[b]: !h.alive}).then(refresh);
+      row.appendChild(btn); bc.appendChild(row);
+    }
+
+    const ag = document.getElementById("algos"); ag.innerHTML = "";
+    for (const a of (policy.algos || ALGOS)) {
+      const b = document.createElement("button");
+      b.textContent = a; if (a === policy.algo) b.classList.add("on");
+      b.onclick = () => api("/policy", {algo: a}).then(refresh);
+      ag.appendChild(b);
+    }
+    const pb = document.getElementById("polBtn");
+    pb.textContent = "policing: " + (policy.policing ? "ON" : "OFF");
+    pb.classList.toggle("on", policy.policing);
+    pb.onclick = () => api("/policy", {policing: !policy.policing}).then(refresh);
+    document.getElementById("limiter").textContent =
+      `${stats.limiter.allowed} allowed · ${stats.limiter.dropped} dropped`;
+
+    document.getElementById("cPin").textContent = stats.packet_in;
+    document.getElementById("cFlows").textContent = stats.lb_flows;
+    document.getElementById("cDup").textContent = stats.dup_packetin || 0;
+    document.getElementById("cDrop").textContent = stats.limiter.dropped;
+
+    const pt = document.getElementById("paths"); pt.innerHTML = "";
+    for (const [k, v] of Object.entries(paths)) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${k}</td><td>${v.path ? v.path.join("→") : "✕"}</td><td>${v.out_port ?? "✕"}</td>`;
+      pt.appendChild(tr);
+    }
+    const ev = document.getElementById("events"); ev.innerHTML = "";
+    const items = [...(stats.sec_events || []).map(e => ["sec", e]),
+                   ...(stats.recoveries || []).map(e => ["rec", e])].slice(-15).reverse();
+    for (const [kind, e] of items) {
+      const d = document.createElement("div");
+      d.innerHTML = `<b>${kind}</b> ${e.event || ("reprogram " + e.reprogram_ms + " ms")} <span class="lbl">${e.t}</span>`;
+      ev.appendChild(d);
+    }
+  } catch (e) { document.getElementById("status").textContent = "controller unreachable (" + e + ")"; }
+}
+refresh(); setInterval(refresh, 1000);
+</script>
+</body>
+</html>
