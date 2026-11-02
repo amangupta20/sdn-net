@@ -25,6 +25,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from mininet.clean import cleanup
 from mininet.cli import CLI
 from mininet.link import Link
 from mininet.log import info, setLogLevel
@@ -132,6 +133,7 @@ def main():
     args = p.parse_args()
 
     setLogLevel("info")
+    cleanup()  # wipe interfaces/bridges from any crashed earlier run
     net = start(args.mode, args.controller)
     info("\n*** Team 21 hosts (VIP %s -> %s)\n" % (cfg.VIP, ", ".join(cfg.BACKENDS)))
     for name, h in cfg.HOSTS.items():
