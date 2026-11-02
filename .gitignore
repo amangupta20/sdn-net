@@ -1,5 +1,8 @@
-__pycache__/
-*.pyc
+controller-live.log
+dash-test.log
 *.pcap
+*.pyc
+__pycache__/
 results/controller.log
 results/run.log
+ryu-debug.log
